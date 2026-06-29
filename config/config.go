@@ -6,7 +6,9 @@ import (
 )
 
 type Config struct {
-	ChannelID string
+	YouTubeChannelID  string
+	DiscordWebhookURL string
+	DiscordRoleID     string
 }
 
 func Load() (*Config, error) {
@@ -15,7 +17,19 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("YOUTUBE_CHANNEL_ID が設定されていません")
 	}
 
+	webhookURL := os.Getenv("DISCORD_WEBHOOK_URL")
+	if webhookURL == "" {
+		return nil, fmt.Errorf("DISCORD_WEBHOOK_URL が設定されていません")
+	}
+
+	roleID := os.Getenv("DISCORD_ROLE_ID")
+	if roleID == "" {
+		return nil, fmt.Errorf("DISCORD_ROLE_ID が設定されていません")
+	}
+
 	return &Config{
-		ChannelID: channelID,
+		YouTubeChannelID:  channelID,
+		DiscordWebhookURL: webhookURL,
+		DiscordRoleID:     roleID,
 	}, nil
 }

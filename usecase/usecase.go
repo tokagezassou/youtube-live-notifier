@@ -4,22 +4,29 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tokagezassou/youtube-live-notifier/discord"
 	"github.com/tokagezassou/youtube-live-notifier/repository"
 	"github.com/tokagezassou/youtube-live-notifier/youtube"
 )
 
 type NotifierUsecase struct {
 	youtubeClient *youtube.YouTubeClient
-	db            *repository.MemoryDB // データベースを保持
+	db            *repository.MemoryDB
+	discordClient *discord.WebhookClient
+	roleID        string
 }
 
 func NewNotifierUsecase(
 	yt *youtube.YouTubeClient,
 	db *repository.MemoryDB,
+	dc *discord.WebhookClient,
+	roleID string,
 ) *NotifierUsecase {
 	return &NotifierUsecase{
 		youtubeClient: yt,
 		db:            db,
+		discordClient: dc,
+		roleID:        roleID,
 	}
 }
 
@@ -30,18 +37,16 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 	}
 
 	var messages []string
-	messages = append(messages, "📢 【最新の動画・配信枠一覧】")
+	roleMention := fmt.Sprintf("<@&%s>", u.roleID)
+	messages = append(messages, fmt.Sprintf("%s\n📢 【最新の動画・配信枠一覧】", roleMention))
 
-	var newItemsCount int // 新着の件数をカウント
+	var newItemsCount int
 
-	// 取得した15件をループで回し、差分チェックを行う
 	for _, v := range lives {
-		// すでに通知済みのIDならスキップ
 		if u.db.IsNotified(v.ID) {
 			continue
 		}
 
-		// 新しいIDだったので、メッセージを作成してDBに記憶させる
 		msg := fmt.Sprintf("タイトル: %s\nURL: %s", v.Title, v.URL)
 		messages = append(messages, msg)
 
@@ -49,10 +54,15 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 		newItemsCount++
 	}
 
-	// もし新着が1件もなければ、その旨を返す
 	if newItemsCount == 0 {
 		return "新着の配信枠はありませんでした。", nil
 	}
 
-	return strings.Join(messages, "\n\n"), nil
+	finalMessage := strings.Join(messages, "\n\n")
+	err = u.discordClient.SendMessage(finalMessage, u.roleID)
+	if err != nil {
+		return "", fmt.Errorf("Discordへの通知に失敗しました: %w", err)
+	}
+
+	return finalMessage, nil
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/tokagezassou/youtube-live-notifier/config"
+	"github.com/tokagezassou/youtube-live-notifier/discord"
 	"github.com/tokagezassou/youtube-live-notifier/handler"
 	"github.com/tokagezassou/youtube-live-notifier/repository"
 	"github.com/tokagezassou/youtube-live-notifier/usecase"
@@ -23,10 +24,18 @@ func main() {
 		log.Fatalf("設定の読み込みに失敗しました: %v", err)
 	}
 
-	youtubeClient := youtube.NewRSSClient(cfg.ChannelID)
+	youtubeClient := youtube.NewRSSClient(cfg.YouTubeChannelID)
+	discordClient := discord.NewWebhookClient(cfg.DiscordWebhookURL)
 	memoryDB := repository.NewMemoryDB()
-	notifierUsecase := usecase.NewNotifierUsecase(youtubeClient, memoryDB)
+	notifierUsecase := usecase.NewNotifierUsecase(
+		youtubeClient,
+		memoryDB,
+		discordClient,
+		cfg.DiscordRoleID,
+	)
 	youtubeHandler := handler.NewYouTubeHandler(notifierUsecase)
+
+	memoryDB.MarkAsNotified("sjaqv4Z0s5Q")
 
 	http.HandleFunc("/check", youtubeHandler.Check)
 
