@@ -18,7 +18,6 @@ func NewYouTubeHandler(u *usecase.NotifierUsecase) *YouTubeHandler {
 }
 
 func (h *YouTubeHandler) Check(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("[Info] リクエストを受け付けました")
 
 	resultMessage, err := h.usecase.CheckAndNotify()
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tokagezassou/youtube-live-notifier/config"
 	"github.com/tokagezassou/youtube-live-notifier/handler"
+	"github.com/tokagezassou/youtube-live-notifier/repository"
 	"github.com/tokagezassou/youtube-live-notifier/usecase"
 	"github.com/tokagezassou/youtube-live-notifier/youtube"
 )
@@ -23,7 +24,8 @@ func main() {
 	}
 
 	youtubeClient := youtube.NewRSSClient(cfg.ChannelID)
-	notifierUsecase := usecase.NewNotifierUsecase(youtubeClient)
+	memoryDB := repository.NewMemoryDB()
+	notifierUsecase := usecase.NewNotifierUsecase(youtubeClient, memoryDB)
 	youtubeHandler := handler.NewYouTubeHandler(notifierUsecase)
 
 	http.HandleFunc("/check", youtubeHandler.Check)
