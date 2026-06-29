@@ -35,8 +35,6 @@ func main() {
 	)
 	youtubeHandler := handler.NewYouTubeHandler(notifierUsecase)
 
-	memoryDB.MarkAsNotified("sjaqv4Z0s5Q")
-
 	http.HandleFunc("/check", youtubeHandler.Check)
 
 	port := "8080"
