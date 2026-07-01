@@ -1,19 +1,61 @@
 package repository
 
+import (
+	"sort"
+	"time"
+)
+
+type StreamDocument struct {
+	ID                 string
+	Title              string
+	URL                string
+	ScheduledStartTime time.Time
+	ShouldNotify       bool
+	IsStarted          bool
+	CreatedAt          time.Time
+}
+
 type MemoryDB struct {
-	notifiedIDs map[string]bool
+	data map[string]StreamDocument
 }
 
 func NewMemoryDB() *MemoryDB {
 	return &MemoryDB{
-		notifiedIDs: make(map[string]bool),
+		data: make(map[string]StreamDocument),
 	}
 }
 
-func (db *MemoryDB) IsNotified(id string) bool {
-	return db.notifiedIDs[id]
+func (db *MemoryDB) Save(doc StreamDocument) {
+	db.data[doc.ID] = doc
 }
 
-func (db *MemoryDB) MarkAsNotified(id string) {
-	db.notifiedIDs[id] = true
+func (db *MemoryDB) GetLatest15IDs() []string {
+	var docs []StreamDocument
+	for _, doc := range db.data {
+		docs = append(docs, doc)
+	}
+
+	sort.Slice(docs, func(i, j int) bool {
+		return docs[i].CreatedAt.After(docs[j].CreatedAt)
+	})
+
+	var ids []string
+	limit := 15
+	if len(docs) < limit {
+		limit = len(docs)
+	}
+	for i := 0; i < limit; i++ {
+		ids = append(ids, docs[i].ID)
+	}
+	return ids
+}
+
+func (db *MemoryDB) GetShouldNotifyStreams() []StreamDocument {
+	var targets []StreamDocument
+	for _, doc := range db.data {
+		if doc.ShouldNotify {
+			targets = append(targets, doc)
+		}
+	}
+	return targets
 }

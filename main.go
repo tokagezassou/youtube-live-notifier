@@ -24,7 +24,7 @@ func main() {
 		log.Fatalf("設定の読み込みに失敗しました: %v", err)
 	}
 
-	youtubeClient := youtube.NewRSSClient(cfg.YouTubeChannelID)
+	youtubeClient := youtube.NewClient(cfg.YouTubeChannelID, cfg.YouTubeAPIKey)
 	discordClient := discord.NewWebhookClient(cfg.DiscordWebhookURL)
 	memoryDB := repository.NewMemoryDB()
 	notifierUsecase := usecase.NewNotifierUsecase(

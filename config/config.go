@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	YouTubeChannelID  string
+	YouTubeAPIKey     string
 	DiscordWebhookURL string
 	DiscordRoleID     string
 }
@@ -15,6 +16,11 @@ func Load() (*Config, error) {
 	channelID := os.Getenv("YOUTUBE_CHANNEL_ID")
 	if channelID == "" {
 		return nil, fmt.Errorf("YOUTUBE_CHANNEL_ID が設定されていません")
+	}
+
+	apiKey := os.Getenv("YOUTUBE_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("YOUTUBE_API_KEY が設定されていません")
 	}
 
 	webhookURL := os.Getenv("DISCORD_WEBHOOK_URL")
@@ -29,6 +35,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		YouTubeChannelID:  channelID,
+		YouTubeAPIKey:     apiKey,
 		DiscordWebhookURL: webhookURL,
 		DiscordRoleID:     roleID,
 	}, nil
