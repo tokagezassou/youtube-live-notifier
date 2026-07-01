@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/tokagezassou/youtube-live-notifier/model"
 )
@@ -41,7 +42,14 @@ func (c *Client) FetchLatestLives() ([]model.LiveInfo, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("YouTube RSSがエラーを返しました (ステータス: %d)", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("RSSの読み込みに失敗しました: %w", err)
+	}
 	var f feed
 	if err := xml.Unmarshal(body, &f); err != nil {
 		return nil, err
@@ -64,18 +72,21 @@ type videoAPIResponse struct {
 		Snippet struct {
 			LiveBroadcastContent string `json:"liveBroadcastContent"`
 		} `json:"snippet"`
+		LiveStreamingDetails struct {
+			ScheduledStartTime string `json:"scheduledStartTime"`
+		} `json:"liveStreamingDetails"`
 	} `json:"items"`
 }
 
-func (c *Client) FilterLiveVideos(videoIDs []string) ([]string, error) {
+func (c *Client) FetchStreamDetails(videoIDs []string) (map[string]model.LiveInfo, error) {
 	if len(videoIDs) == 0 {
-		return []string{}, nil
+		return map[string]model.LiveInfo{}, nil
 	}
 
 	idsParam := strings.Join(videoIDs, ",")
 
 	apiURL := fmt.Sprintf(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet&id=%s&key=%s",
+		"https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=%s&key=%s",
 		url.QueryEscape(idsParam),
 		c.apiKey,
 	)
@@ -100,12 +111,22 @@ func (c *Client) FilterLiveVideos(videoIDs []string) ([]string, error) {
 		return nil, fmt.Errorf("JSONの解析に失敗しました: %w", err)
 	}
 
-	var liveIDs []string
+	result := make(map[string]model.LiveInfo)
 	for _, item := range apiResp.Items {
-		if item.Snippet.LiveBroadcastContent == "live" || item.Snippet.LiveBroadcastContent == "upcoming" {
-			liveIDs = append(liveIDs, item.ID)
+		details := model.LiveInfo{
+			ID:     item.ID,
+			Status: item.Snippet.LiveBroadcastContent,
 		}
+
+		if item.LiveStreamingDetails.ScheduledStartTime != "" {
+			t, err := time.Parse(time.RFC3339, item.LiveStreamingDetails.ScheduledStartTime)
+			if err == nil {
+				details.ScheduledStartTime = t
+			}
+		}
+
+		result[item.ID] = details
 	}
 
-	return liveIDs, nil
+	return result, nil
 }

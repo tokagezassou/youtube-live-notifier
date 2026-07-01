@@ -41,11 +41,11 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 	}
 	resultMessages = append(resultMessages, "【新着チェック】 "+newMsg)
 
-	// startMsg, err := u.checkStreamStarted()
-	// if err != nil {
-	// 	return "", fmt.Errorf("開始チェックエラー: %w", err)
-	// }
-	// resultMessages = append(resultMessages, "【開始チェック】 "+startMsg)
+	startMsg, err := u.checkStreamStarted()
+	if err != nil {
+		return "", fmt.Errorf("開始チェックエラー: %w", err)
+	}
+	resultMessages = append(resultMessages, "【開始チェック】 "+startMsg)
 
 	return strings.Join(resultMessages, "\n"), nil
 }
@@ -77,69 +77,114 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 		return "新着なし", nil
 	}
 
-	liveIDs, err := u.youtubeClient.FilterLiveVideos(newCandidateIDs)
+	apiDetails, err := u.youtubeClient.FetchStreamDetails(newCandidateIDs)
 	if err != nil {
 		return "", err
-	}
-
-	liveIDMap := make(map[string]bool)
-	for _, id := range liveIDs {
-		liveIDMap[id] = true
 	}
 
 	var messages []string
 	roleMention := fmt.Sprintf("<@&%s>", u.roleID)
 	messages = append(messages, fmt.Sprintf("%s 📢 【新しい配信枠が作成されました！】", roleMention))
 
+	notifiedCount := 0
+
 	for _, id := range newCandidateIDs {
-		v := candidateMap[id]
-		isLiveStream := liveIDMap[id]
+		info := candidateMap[id]
+		apiInfo := apiDetails[id]
+
+		info.Status = apiInfo.Status
+		info.ScheduledStartTime = apiInfo.ScheduledStartTime
+
+		isStream := (info.Status == model.StatusUpcoming || info.Status == model.StatusLive)
 
 		doc := repository.StreamDocument{
-			ID:           id,
-			Title:        v.Title,
-			URL:          v.URL,
-			ShouldNotify: isLiveStream,
-			IsStarted:    false,
-			CreatedAt:    time.Now(),
+			ID:                 info.ID,
+			Title:              info.Title,
+			URL:                info.URL,
+			ScheduledStartTime: info.ScheduledStartTime,
+			ShouldNotify:       isStream,
+			CreatedAt:          time.Now(),
 		}
 		u.db.Save(doc)
 
-		if isLiveStream {
-			messages = append(messages, fmt.Sprintf("タイトル: %s\nURL: %s", v.Title, v.URL))
+		if info.Status == model.StatusUpcoming {
+			messages = append(messages, fmt.Sprintf("タイトル: %s\nURL: %s", info.Title, info.URL))
+			notifiedCount++
 		}
 	}
 
-	if len(liveIDs) > 0 {
+	if notifiedCount > 0 {
 		finalMessage := strings.Join(messages, "\n\n")
 		_ = u.discordClient.SendMessage(finalMessage, u.roleID)
-		return fmt.Sprintf("%d件の新しい配信枠を通知しました", len(liveIDs)), nil
+		return fmt.Sprintf("%d件の新しい配信枠を通知しました", notifiedCount), nil
 	}
 
 	return "新着は動画のみのため通知スキップ", nil
 }
 
-// func (u *NotifierUsecase) checkStreamStarted() (string, error) {
-// 	targets := u.db.GetShouldNotifyStreams()
-// 	if len(targets) == 0 {
-// 		return "監視対象なし", nil
-// 	}
+func (u *NotifierUsecase) checkStreamStarted() (string, error) {
+	targets := u.db.GetShouldNotifyStreams()
+	if len(targets) == 0 {
+		return "監視対象なし", nil
+	}
 
-// 	var checkIDs []string
-// 	for _, t := range targets {
-// 		checkIDs = append(checkIDs, t.ID)
-// 	}
+	var checkIDs []string
+	now := time.Now()
 
-// 	notifiedCount := 0
-// 	for _, doc := range targets {
-// 		msg := fmt.Sprintf("<@&%s> 🎥 【配信が開始されました！】\nタイトル: %s\nURL: %s", u.roleID, doc.Title, doc.URL)
-// 		u.discordClient.SendMessage(msg, u.roleID)
-// 		doc.ShouldNotify = false
-// 		doc.IsStarted = true
-// 		u.db.Save(doc)
-// 		notifiedCount++
+	for _, t := range targets {
+		if t.ScheduledStartTime.IsZero() {
+			checkIDs = append(checkIDs, t.ID)
+			continue
+		}
 
-// 	}
+		if now.After(t.ScheduledStartTime.Add(90 * time.Minute)) {
+			t.ShouldNotify = false
+			u.db.Save(t)
+			continue
+		}
 
-// 	return fmt.Sprintf("%d件の開始状況をチェックしました（通知: %d件）", len(targets), notifiedCount), nil
-// }
+		if now.After(t.ScheduledStartTime.Add(-5*time.Minute)) &&
+			now.Before(t.ScheduledStartTime.Add(90*time.Minute)) {
+			checkIDs = append(checkIDs, t.ID)
+		}
+	}
+
+	if len(checkIDs) == 0 {
+		return "時間内の監視対象なし", nil
+	}
+
+	apiDetails, err := u.youtubeClient.FetchStreamDetails(checkIDs)
+	if err != nil {
+		return "", err
+	}
+
+	notifiedCount := 0
+	for _, id := range checkIDs {
+		var doc repository.StreamDocument
+		for _, t := range targets {
+			if t.ID == id {
+				doc = t
+				break
+			}
+		}
+
+		apiInfo, exists := apiDetails[id]
+
+		if !exists || apiInfo.Status == model.StatusNone {
+			doc.ShouldNotify = false
+			u.db.Save(doc)
+			continue
+		}
+
+		if apiInfo.Status == model.StatusLive {
+			msg := fmt.Sprintf("<@&%s> 🎥 【配信が開始されました！】\nタイトル: %s\nURL: %s", u.roleID, doc.Title, doc.URL)
+			u.discordClient.SendMessage(msg, u.roleID)
+
+			doc.ShouldNotify = false
+			u.db.Save(doc)
+			notifiedCount++
+		}
+	}
+
+	return fmt.Sprintf("%d件の開始状況をチェックしました（通知: %d件）", len(checkIDs), notifiedCount), nil
+}

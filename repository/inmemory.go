@@ -11,7 +11,6 @@ type StreamDocument struct {
 	URL                string
 	ScheduledStartTime time.Time
 	ShouldNotify       bool
-	IsStarted          bool
 	CreatedAt          time.Time
 }
 
