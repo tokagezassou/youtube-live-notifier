@@ -36,7 +36,8 @@ func (c *WebhookClient) SendMessage(message string, roleID string) error {
 			Parse: []string{"everyone", "users"},
 			Roles: []string{roleID},
 		},
-		Username: "もあち配信通知",
+		Username:  "もあち配信通知",
+		AvatarURL: "https://raw.githubusercontent.com/tokagezassou/youtube-live-notifier/main/assets/sample_icon.JPG",
 	}
 
 	body, err := json.Marshal(p)
