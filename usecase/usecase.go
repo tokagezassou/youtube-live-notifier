@@ -65,12 +65,12 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 	var newCandidateIDs []string
 	candidateMap := make(map[string]model.LiveInfo)
 
-	for _, v := range lives {
-		if dbIDMap[v.ID] {
+	for _, l := range lives {
+		if dbIDMap[l.ID] {
 			continue
 		}
-		newCandidateIDs = append(newCandidateIDs, v.ID)
-		candidateMap[v.ID] = v
+		newCandidateIDs = append(newCandidateIDs, l.ID)
+		candidateMap[l.ID] = l
 	}
 
 	if len(newCandidateIDs) == 0 {
@@ -82,18 +82,16 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 		return "", err
 	}
 
-	var messages []string
-	roleMention := fmt.Sprintf("<@&%s>", u.roleID)
-	messages = append(messages, fmt.Sprintf("%s 📢 【新しい配信枠が作成されました！】", roleMention))
-
-	notifiedCount := 0
-
 	for _, id := range newCandidateIDs {
 		info := candidateMap[id]
 		apiInfo := apiDetails[id]
 
 		info.Status = apiInfo.Status
 		info.ScheduledStartTime = apiInfo.ScheduledStartTime
+
+		if info.Status == model.StatusUpcoming && info.ScheduledStartTime.IsZero() {
+			continue
+		}
 
 		isStream := (info.Status == model.StatusUpcoming || info.Status == model.StatusLive)
 
@@ -108,18 +106,49 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 		u.db.Save(doc)
 
 		if info.Status == model.StatusUpcoming {
-			messages = append(messages, fmt.Sprintf("タイトル: %s\nURL: %s", info.Title, info.URL))
-			notifiedCount++
+			message := u.newStreamMessage(info)
+			err = u.discordClient.SendMessage(message, u.roleID)
+			if err != nil {
+				fmt.Printf("Discord通知エラー (ID: %s): %v\n", info.ID, err)
+			}
 		}
 	}
 
-	if notifiedCount > 0 {
-		finalMessage := strings.Join(messages, "\n\n")
-		_ = u.discordClient.SendMessage(finalMessage, u.roleID)
-		return fmt.Sprintf("%d件の新しい配信枠を通知しました", notifiedCount), nil
+	return "新着を確認しました", nil
+}
+
+func (u *NotifierUsecase) newStreamMessage(l model.LiveInfo) string {
+	jst := time.FixedZone("Asia/Tokyo", 9*60*60)
+	japaneseWeekdays := []string{"日", "月", "火", "水", "木", "金", "土"}
+
+	jstTime := l.ScheduledStartTime.In(jst)
+	weekdayIdx := jstTime.Weekday()
+	weekdayStr := japaneseWeekdays[weekdayIdx]
+
+	// 時間操作
+	now := time.Now().In(jst)
+	// now := time.Date(2026, 7, 1, 21, 0, 0, 0, jst)
+	var dateStr string
+	if jstTime.Year() == now.Year() &&
+		jstTime.Month() == now.Month() &&
+		jstTime.Day() == now.Day() {
+		dateStr = "今日"
+	} else {
+		dateStr = fmt.Sprintf("%d/%d(%s)", jstTime.Month(), jstTime.Day(), weekdayStr)
 	}
 
-	return "新着は動画のみのため通知スキップ", nil
+	var timeStr string
+	if jstTime.Minute() == 0 {
+		timeStr = fmt.Sprintf("%sの%d時", dateStr, jstTime.Hour())
+	} else {
+		timeStr = fmt.Sprintf("%sの%d:%02d", dateStr, jstTime.Hour(), jstTime.Minute())
+	}
+
+	message := fmt.Sprintf("<@&%s>\n", u.roleID)
+	message += timeStr + "から配信予定の枠立てました！高評価よろしくもーあちっ！\n"
+	message += l.URL
+
+	return message
 }
 
 func (u *NotifierUsecase) checkStreamStarted() (string, error) {
@@ -128,9 +157,12 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		return "監視対象なし", nil
 	}
 
-	var checkIDs []string
+	// 時間操作
 	now := time.Now()
+	// jst, _ := time.LoadLocation("Asia/Tokyo")
+	// now := time.Date(2026, 7, 3, 22, 0, 0, 0, jst)
 
+	var checkIDs []string
 	for _, t := range targets {
 		if t.ScheduledStartTime.IsZero() {
 			checkIDs = append(checkIDs, t.ID)
@@ -177,8 +209,11 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		}
 
 		if apiInfo.Status == model.StatusLive {
-			msg := fmt.Sprintf("<@&%s> 🎥 【配信が開始されました！】\nタイトル: %s\nURL: %s", u.roleID, doc.Title, doc.URL)
-			u.discordClient.SendMessage(msg, u.roleID)
+			message := fmt.Sprintf("<@&%s>\n", u.roleID)
+			message += "配信開始しました！今日も「ただいまもあち」待っとるけーん💖\n"
+			message += doc.URL
+
+			u.discordClient.SendMessage(message, u.roleID)
 
 			doc.ShouldNotify = false
 			u.db.Save(doc)

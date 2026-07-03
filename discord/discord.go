@@ -25,6 +25,8 @@ type allowedMentions struct {
 type payload struct {
 	Content         string          `json:"content"`
 	AllowedMentions allowedMentions `json:"allowed_mentions"`
+	Username        string          `json:"username,omitempty"`
+	AvatarURL       string          `json:"avatar_url,omitempty"`
 }
 
 func (c *WebhookClient) SendMessage(message string, roleID string) error {
@@ -34,6 +36,7 @@ func (c *WebhookClient) SendMessage(message string, roleID string) error {
 			Parse: []string{"everyone", "users"},
 			Roles: []string{roleID},
 		},
+		Username: "もあち配信通知",
 	}
 
 	body, err := json.Marshal(p)
