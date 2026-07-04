@@ -13,14 +13,16 @@ import (
 
 type NotifierUsecase struct {
 	youtubeClient *youtube.Client
-	db            *repository.MemoryDB
+	// db            *repository.MemoryDB
+	db            *repository.FirestoreDB
 	discordClient *discord.WebhookClient
 	roleID        string
 }
 
 func NewNotifierUsecase(
 	yt *youtube.Client,
-	db *repository.MemoryDB,
+	// db *repository.MemoryDB,
+	db *repository.FirestoreDB,
 	dc *discord.WebhookClient,
 	roleID string,
 ) *NotifierUsecase {

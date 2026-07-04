@@ -2,17 +2,16 @@ package repository
 
 import (
 	"sort"
-	"time"
 )
 
-type StreamDocument struct {
-	ID                 string
-	Title              string
-	URL                string
-	ScheduledStartTime time.Time
-	ShouldNotify       bool
-	CreatedAt          time.Time
-}
+// type StreamDocument struct {
+// 	ID                 string
+// 	Title              string
+// 	URL                string
+// 	ScheduledStartTime time.Time
+// 	ShouldNotify       bool
+// 	CreatedAt          time.Time
+// }
 
 type MemoryDB struct {
 	data map[string]StreamDocument
