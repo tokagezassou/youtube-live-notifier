@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -127,9 +128,7 @@ func (u *NotifierUsecase) newStreamMessage(l model.LiveInfo) string {
 	weekdayIdx := jstTime.Weekday()
 	weekdayStr := japaneseWeekdays[weekdayIdx]
 
-	// 時間操作
 	now := time.Now().In(jst)
-	// now := time.Date(2026, 7, 1, 21, 0, 0, 0, jst)
 	var dateStr string
 	if jstTime.Year() == now.Year() &&
 		jstTime.Month() == now.Month() &&
@@ -159,14 +158,16 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		return "監視対象なし", nil
 	}
 
-	// 時間操作
 	now := time.Now()
-	// jst, _ := time.LoadLocation("Asia/Tokyo")
-	// now := time.Date(2026, 7, 3, 22, 0, 0, 0, jst)
-
 	var checkIDs []string
 	for _, t := range targets {
 		if t.ScheduledStartTime.IsZero() {
+			if now.After(t.CreatedAt.Add(90 * time.Minute)) {
+				t.ShouldNotify = false
+				u.db.Save(t)
+				continue
+			}
+
 			checkIDs = append(checkIDs, t.ID)
 			continue
 		}
@@ -203,6 +204,10 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		}
 
 		apiInfo, exists := apiDetails[id]
+		if !exists {
+			log.Printf("警告: APIから動画データが返されませんでした (ID: %s)。次回の周期で再試行します。\n", id)
+			continue
+		}
 
 		if !exists || apiInfo.Status == model.StatusNone {
 			doc.ShouldNotify = false

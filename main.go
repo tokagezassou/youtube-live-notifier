@@ -10,7 +10,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tokagezassou/youtube-live-notifier/config"
 	"github.com/tokagezassou/youtube-live-notifier/discord"
-	"github.com/tokagezassou/youtube-live-notifier/handler"
 	"github.com/tokagezassou/youtube-live-notifier/repository"
 	"github.com/tokagezassou/youtube-live-notifier/usecase"
 	"github.com/tokagezassou/youtube-live-notifier/youtube"
@@ -45,14 +44,28 @@ func main() {
 		discordClient,
 		cfg.DiscordRoleID,
 	)
-	youtubeHandler := handler.NewYouTubeHandler(notifierUsecase)
 
-	http.HandleFunc("/check", youtubeHandler.Check)
+	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("定期チェックのリクエストを受信しました")
 
-	port := "8080"
-	fmt.Printf("ローカルサーバーを起動しました: http://localhost:%s\n", port)
+		msg, err := notifierUsecase.CheckAndNotify()
+		if err != nil {
+			log.Printf("処理エラー: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 
+		log.Printf("処理完了: %s", msg)
+		fmt.Fprintf(w, "Success: %s", msg)
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("サーバーを起動します。ポート: %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("サーバーの起動に失敗しました: %v", err)
+		log.Fatalf("サーバー起動エラー: %v", err)
 	}
 }
