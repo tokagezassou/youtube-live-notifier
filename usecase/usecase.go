@@ -162,7 +162,7 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 	var checkIDs []string
 	for _, t := range targets {
 		if t.ScheduledStartTime.IsZero() {
-			if now.After(t.CreatedAt.Add(90 * time.Minute)) {
+			if now.After(t.CreatedAt.Add(250 * time.Minute)) {
 				t.ShouldNotify = false
 				u.db.Save(t)
 				continue
@@ -172,14 +172,14 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 			continue
 		}
 
-		if now.After(t.ScheduledStartTime.Add(90 * time.Minute)) {
+		if now.After(t.ScheduledStartTime.Add(250 * time.Minute)) {
 			t.ShouldNotify = false
 			u.db.Save(t)
 			continue
 		}
 
-		if now.After(t.ScheduledStartTime.Add(-5*time.Minute)) &&
-			now.Before(t.ScheduledStartTime.Add(90*time.Minute)) {
+		if now.After(t.ScheduledStartTime.Add(-130*time.Minute)) &&
+			now.Before(t.ScheduledStartTime.Add(250*time.Minute)) {
 			checkIDs = append(checkIDs, t.ID)
 		}
 	}
