@@ -59,17 +59,17 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 		return "", err
 	}
 
-	latestDBIDs := u.db.GetLatest15IDs()
-	dbIDMap := make(map[string]bool)
-	for _, id := range latestDBIDs {
-		dbIDMap[id] = true
+	ids := make([]string, 0, len(lives))
+	for _, l := range lives {
+		ids = append(ids, l.ID)
 	}
+	existing := u.db.GetExistingIDs(ids)
 
 	var newCandidateIDs []string
 	candidateMap := make(map[string]model.LiveInfo)
 
 	for _, l := range lives {
-		if dbIDMap[l.ID] {
+		if existing[l.ID] {
 			continue
 		}
 		newCandidateIDs = append(newCandidateIDs, l.ID)
@@ -92,6 +92,9 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 		info.Status = apiInfo.Status
 		info.ScheduledStartTime = apiInfo.ScheduledStartTime
 
+		if info.Status != model.StatusUpcoming && info.Status != model.StatusLive {
+			continue
+		}
 		if info.Status == model.StatusUpcoming && info.ScheduledStartTime.IsZero() {
 			continue
 		}
@@ -106,7 +109,12 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 			ShouldNotify:       isStream,
 			CreatedAt:          time.Now(),
 		}
-		u.db.Save(doc)
+
+		err := u.db.Save(doc)
+		if err != nil {
+			log.Printf("保存失敗のため通知スキップ (ID: %s): %v", info.ID, err)
+			continue
+		}
 
 		if info.Status == model.StatusUpcoming {
 			message := u.newStreamMessage(info)
@@ -164,7 +172,11 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		if t.ScheduledStartTime.IsZero() {
 			if now.After(t.CreatedAt.Add(250 * time.Minute)) {
 				t.ShouldNotify = false
-				u.db.Save(t)
+				err := u.db.Save(t)
+				if err != nil {
+					log.Printf("保存失敗のため通知スキップ (ID: %s): %v", t.ID, err)
+					continue
+				}
 				continue
 			}
 
@@ -174,7 +186,11 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 
 		if now.After(t.ScheduledStartTime.Add(250 * time.Minute)) {
 			t.ShouldNotify = false
-			u.db.Save(t)
+			err := u.db.Save(t)
+			if err != nil {
+				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", t.ID, err)
+				continue
+			}
 			continue
 		}
 
@@ -211,19 +227,27 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 
 		if !exists || apiInfo.Status == model.StatusNone {
 			doc.ShouldNotify = false
-			u.db.Save(doc)
+			err := u.db.Save(doc)
+			if err != nil {
+				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", doc.ID, err)
+				continue
+			}
 			continue
 		}
 
 		if apiInfo.Status == model.StatusLive {
+			doc.ShouldNotify = false
+			if err := u.db.Save(doc); err != nil {
+				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", doc.ID, err)
+				continue
+			}
+
 			message := fmt.Sprintf("<@&%s>\n", u.roleID)
 			message += "配信開始しました！今日も「ただいまもあち」待っとるけーん💖\n"
 			message += doc.URL
-
-			u.discordClient.SendMessage(message, u.roleID)
-
-			doc.ShouldNotify = false
-			u.db.Save(doc)
+			if err := u.discordClient.SendMessage(message, u.roleID); err != nil {
+				log.Printf("Discord通知エラー (ID: %s): %v", doc.ID, err)
+			}
 			notifiedCount++
 		}
 	}

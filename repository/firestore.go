@@ -45,35 +45,35 @@ func (db *FirestoreDB) Close() error {
 	return db.client.Close()
 }
 
-func (db *FirestoreDB) Save(doc StreamDocument) {
+func (db *FirestoreDB) Save(doc StreamDocument) error {
 	ctx := context.Background()
 	_, err := db.client.Collection("streams").Doc(doc.ID).Set(ctx, doc)
-	if err != nil {
-		log.Printf("Firestore保存エラー (ID: %s): %v\n", doc.ID, err)
-	}
+	return err
 }
 
-func (db *FirestoreDB) GetLatest15IDs() []string {
-	ctx := context.Background()
-	var ids []string
-
-	iter := db.client.Collection("streams").
-		OrderBy("CreatedAt", firestore.Desc).
-		Limit(15).
-		Documents(ctx)
-
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			log.Printf("Firestore最新ID取得エラー: %v\n", err)
-			return ids
-		}
-		ids = append(ids, doc.Ref.ID)
+func (db *FirestoreDB) GetExistingIDs(ids []string) map[string]bool {
+	result := make(map[string]bool)
+	if len(ids) == 0 {
+		return result
 	}
-	return ids
+	ctx := context.Background()
+
+	refs := make([]*firestore.DocumentRef, 0, len(ids))
+	for _, id := range ids {
+		refs = append(refs, db.client.Collection("streams").Doc(id))
+	}
+
+	docs, err := db.client.GetAll(ctx, refs)
+	if err != nil {
+		log.Printf("Firestore GetAllエラー: %v\n", err)
+		return result
+	}
+	for _, d := range docs {
+		if d.Exists() {
+			result[d.Ref.ID] = true
+		}
+	}
+	return result
 }
 
 func (db *FirestoreDB) GetShouldNotifyStreams() []StreamDocument {
