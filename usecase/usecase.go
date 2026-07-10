@@ -54,7 +54,7 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 }
 
 func (u *NotifierUsecase) checkNewStreams() (string, error) {
-	lives, err := u.youtubeClient.FetchLatestLives()
+	lives, err := u.youtubeClient.FetchUpcomingLives()
 	if err != nil {
 		return "", err
 	}
@@ -63,65 +63,40 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 	for _, l := range lives {
 		ids = append(ids, l.ID)
 	}
-	existing := u.db.GetExistingIDs(ids)
-
-	var newCandidateIDs []string
-	candidateMap := make(map[string]model.LiveInfo)
-
-	for _, l := range lives {
-		if existing[l.ID] {
-			continue
-		}
-		newCandidateIDs = append(newCandidateIDs, l.ID)
-		candidateMap[l.ID] = l
-	}
-
-	if len(newCandidateIDs) == 0 {
+	if len(ids) == 0 {
 		return "新着なし", nil
 	}
+	existing := u.db.GetExistingIDs(ids)
 
-	apiDetails, err := u.youtubeClient.FetchStreamDetails(newCandidateIDs)
-	if err != nil {
-		return "", err
-	}
-
-	for _, id := range newCandidateIDs {
-		info := candidateMap[id]
-		apiInfo := apiDetails[id]
-
-		info.Status = apiInfo.Status
-		info.ScheduledStartTime = apiInfo.ScheduledStartTime
-
-		if info.Status != model.StatusUpcoming && info.Status != model.StatusLive {
-			continue
-		}
-		if info.Status == model.StatusUpcoming && info.ScheduledStartTime.IsZero() {
+	for _, info := range lives {
+		if existing[info.ID] {
 			continue
 		}
 
-		isStream := (info.Status == model.StatusUpcoming || info.Status == model.StatusLive)
+		if info.PrivacyStatus != model.StatusPublic {
+			continue
+		}
+		if info.ScheduledStartTime.IsZero() {
+			continue
+		}
 
 		doc := repository.StreamDocument{
 			ID:                 info.ID,
 			Title:              info.Title,
 			URL:                info.URL,
 			ScheduledStartTime: info.ScheduledStartTime,
-			ShouldNotify:       isStream,
+			ShouldNotify:       true,
 			CreatedAt:          time.Now(),
 		}
 
-		err := u.db.Save(doc)
-		if err != nil {
+		if err := u.db.Save(doc); err != nil {
 			log.Printf("保存失敗のため通知スキップ (ID: %s): %v", info.ID, err)
 			continue
 		}
 
-		if info.Status == model.StatusUpcoming {
-			message := u.newStreamMessage(info)
-			err = u.discordClient.SendMessage(message, u.roleID)
-			if err != nil {
-				fmt.Printf("Discord通知エラー (ID: %s): %v\n", info.ID, err)
-			}
+		message := u.newStreamMessage(info)
+		if err := u.discordClient.SendMessage(message, u.roleID); err != nil {
+			fmt.Printf("Discord通知エラー (ID: %s): %v\n", info.ID, err)
 		}
 	}
 
@@ -174,7 +149,7 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 				t.ShouldNotify = false
 				err := u.db.Save(t)
 				if err != nil {
-					log.Printf("保存失敗のため通知スキップ (ID: %s): %v", t.ID, err)
+					log.Printf("保存失敗 (ID: %s): %v", t.ID, err)
 					continue
 				}
 				continue
@@ -188,7 +163,7 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 			t.ShouldNotify = false
 			err := u.db.Save(t)
 			if err != nil {
-				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", t.ID, err)
+				log.Printf("保存失敗 (ID: %s): %v", t.ID, err)
 				continue
 			}
 			continue
@@ -204,9 +179,13 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 		return "時間内の監視対象なし", nil
 	}
 
-	apiDetails, err := u.youtubeClient.FetchStreamDetails(checkIDs)
+	activeLives, err := u.youtubeClient.FetchActiveLives()
 	if err != nil {
 		return "", err
+	}
+	activeMap := make(map[string]model.LiveInfo)
+	for _, l := range activeLives {
+		activeMap[l.ID] = l
 	}
 
 	notifiedCount := 0
@@ -219,23 +198,7 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 			}
 		}
 
-		apiInfo, exists := apiDetails[id]
-		if !exists {
-			log.Printf("警告: APIから動画データが返されませんでした (ID: %s)。次回の周期で再試行します。\n", id)
-			continue
-		}
-
-		if !exists || apiInfo.Status == model.StatusNone {
-			doc.ShouldNotify = false
-			err := u.db.Save(doc)
-			if err != nil {
-				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", doc.ID, err)
-				continue
-			}
-			continue
-		}
-
-		if apiInfo.Status == model.StatusLive {
+		if _, isActive := activeMap[id]; isActive {
 			doc.ShouldNotify = false
 			if err := u.db.Save(doc); err != nil {
 				log.Printf("保存失敗のため通知スキップ (ID: %s): %v", doc.ID, err)

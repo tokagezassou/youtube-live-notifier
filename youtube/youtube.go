@@ -1,132 +1,123 @@
 package youtube
 
 import (
+	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 
 	"github.com/tokagezassou/youtube-live-notifier/model"
 )
 
+const youtubeReadonlyScope = "https://www.googleapis.com/auth/youtube.readonly"
+
 type Client struct {
-	channelID string
-	apiKey    string
+	httpClient *http.Client
 }
 
-func NewClient(channelID, apiKey string) *Client {
+func NewClient(
+	ctx context.Context,
+	clientID string,
+	clientSecret string,
+	refreshToken string,
+) *Client {
+	cfg := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{youtubeReadonlyScope},
+	}
+	token := &oauth2.Token{RefreshToken: refreshToken}
 	return &Client{
-		channelID: channelID,
-		apiKey:    apiKey,
+		httpClient: cfg.Client(ctx, token),
 	}
 }
 
-type feed struct {
-	XMLName xml.Name `xml:"feed"`
-	Entries []entry  `xml:"entry"`
-}
-type entry struct {
-	VideoID string `xml:"videoId"`
-	Title   string `xml:"title"`
+type broadcastListResponse struct {
+	Items []struct {
+		ID      string `json:"id"`
+		Snippet struct {
+			Title              string `json:"title"`
+			ScheduledStartTime string `json:"scheduledStartTime"`
+		} `json:"snippet"`
+		Status struct {
+			LifeCycleStatus string `json:"lifeCycleStatus"`
+			PrivacyStatus   string `json:"privacyStatus"`
+		} `json:"status"`
+	} `json:"items"`
+	NextPageToken string `json:"nextPageToken"`
 }
 
-func (c *Client) FetchLatestLives() ([]model.LiveInfo, error) {
-	rssURL := fmt.Sprintf("https://www.youtube.com/feeds/videos.xml?channel_id=%s", c.channelID)
-	resp, err := http.Get(rssURL)
+func (c *Client) FetchUpcomingLives() ([]model.LiveInfo, error) {
+	return c.fetchBroadcasts("upcoming")
+}
+
+func (c *Client) FetchActiveLives() ([]model.LiveInfo, error) {
+	return c.fetchBroadcasts("active")
+}
+
+func (c *Client) fetchBroadcasts(broadcastStatus string) ([]model.LiveInfo, error) {
+	apiURL := fmt.Sprintf(
+		"https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status&broadcastStatus=%s&maxResults=50",
+		broadcastStatus,
+	)
+
+	resp, err := c.httpClient.Get(apiURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("liveBroadcasts の取得に失敗しました: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("OAuth 認証に失敗しました（トークンの再取得が必要な可能性があります）: %s", resp.Status)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("YouTube RSSがエラーを返しました (ステータス: %d)", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("YouTube API エラー (ステータス: %d): %s", resp.StatusCode, string(body))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("RSSの読み込みに失敗しました: %w", err)
-	}
-	var f feed
-	if err := xml.Unmarshal(body, &f); err != nil {
 		return nil, err
 	}
 
+	var apiResp broadcastListResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("JSON の解析に失敗しました: %w", err)
+	}
+
 	var lives []model.LiveInfo
-	for _, e := range f.Entries {
-		lives = append(lives, model.LiveInfo{
-			ID:    e.VideoID,
-			Title: e.Title,
-			URL:   "https://www.youtube.com/watch?v=" + e.VideoID,
-		})
+	for _, item := range apiResp.Items {
+		live := model.LiveInfo{
+			ID:              item.ID,
+			Title:           item.Snippet.Title,
+			URL:             "https://www.youtube.com/watch?v=" + item.ID,
+			Status:          mapLifeCycleToStatus(item.Status.LifeCycleStatus),
+			LifeCycleStatus: item.Status.LifeCycleStatus,
+			PrivacyStatus:   item.Status.PrivacyStatus,
+		}
+		if item.Snippet.ScheduledStartTime != "" {
+			if t, err := time.Parse(time.RFC3339, item.Snippet.ScheduledStartTime); err == nil {
+				live.ScheduledStartTime = t
+			}
+		}
+		lives = append(lives, live)
 	}
 	return lives, nil
 }
 
-type videoAPIResponse struct {
-	Items []struct {
-		ID      string `json:"id"`
-		Snippet struct {
-			LiveBroadcastContent string `json:"liveBroadcastContent"`
-		} `json:"snippet"`
-		LiveStreamingDetails struct {
-			ScheduledStartTime string `json:"scheduledStartTime"`
-		} `json:"liveStreamingDetails"`
-	} `json:"items"`
-}
-
-func (c *Client) FetchStreamDetails(videoIDs []string) (map[string]model.LiveInfo, error) {
-	if len(videoIDs) == 0 {
-		return map[string]model.LiveInfo{}, nil
+func mapLifeCycleToStatus(lifeCycle string) string {
+	switch lifeCycle {
+	case "live", "liveStarting":
+		return model.StatusLive
+	case "complete", "revoked":
+		return model.StatusCompleted
+	default:
+		return model.StatusUpcoming
 	}
-
-	idsParam := strings.Join(videoIDs, ",")
-
-	apiURL := fmt.Sprintf(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=%s&key=%s",
-		url.QueryEscape(idsParam),
-		c.apiKey,
-	)
-
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return nil, fmt.Errorf("YouTube APIの送信に失敗しました: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("YouTube APIエラー: %s", resp.Status)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var apiResp videoAPIResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return nil, fmt.Errorf("JSONの解析に失敗しました: %w", err)
-	}
-
-	result := make(map[string]model.LiveInfo)
-	for _, item := range apiResp.Items {
-		details := model.LiveInfo{
-			ID:     item.ID,
-			Status: item.Snippet.LiveBroadcastContent,
-		}
-
-		if item.LiveStreamingDetails.ScheduledStartTime != "" {
-			t, err := time.Parse(time.RFC3339, item.LiveStreamingDetails.ScheduledStartTime)
-			if err == nil {
-				details.ScheduledStartTime = t
-			}
-		}
-
-		result[item.ID] = details
-	}
-
-	return result, nil
 }

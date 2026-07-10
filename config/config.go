@@ -6,23 +6,14 @@ import (
 )
 
 type Config struct {
-	YouTubeChannelID  string
-	YouTubeAPIKey     string
 	DiscordWebhookURL string
 	DiscordRoleID     string
+	OAuthClientID     string
+	OAuthClientSecret string
+	OAuthRefreshToken string
 }
 
 func Load() (*Config, error) {
-	channelID := os.Getenv("YOUTUBE_CHANNEL_ID")
-	if channelID == "" {
-		return nil, fmt.Errorf("YOUTUBE_CHANNEL_ID が設定されていません")
-	}
-
-	apiKey := os.Getenv("YOUTUBE_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("YOUTUBE_API_KEY が設定されていません")
-	}
-
 	webhookURL := os.Getenv("DISCORD_WEBHOOK_URL")
 	if webhookURL == "" {
 		return nil, fmt.Errorf("DISCORD_WEBHOOK_URL が設定されていません")
@@ -33,10 +24,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DISCORD_ROLE_ID が設定されていません")
 	}
 
+	clientID := os.Getenv("OAUTH_CLIENT_ID")
+	if clientID == "" {
+		return nil, fmt.Errorf("OAUTH_CLIENT_ID が設定されていません")
+	}
+
+	clientSecret := os.Getenv("OAUTH_CLIENT_SECRET")
+	if clientSecret == "" {
+		return nil, fmt.Errorf("OAUTH_CLIENT_SECRET が設定されていません")
+	}
+
+	oAuthRefreshToken := os.Getenv("OAUTH_REFRESH_TOKEN")
+	if oAuthRefreshToken == "" {
+		return nil, fmt.Errorf("OAUTH_REFRESH_TOKEN が設定されていません")
+	}
+
 	return &Config{
-		YouTubeChannelID:  channelID,
-		YouTubeAPIKey:     apiKey,
 		DiscordWebhookURL: webhookURL,
 		DiscordRoleID:     roleID,
+		OAuthClientID:     clientID,
+		OAuthClientSecret: clientSecret,
+		OAuthRefreshToken: oAuthRefreshToken,
 	}, nil
 }

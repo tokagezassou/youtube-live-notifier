@@ -8,10 +8,13 @@ type LiveInfo struct {
 	URL                string
 	Status             string
 	ScheduledStartTime time.Time
+	LifeCycleStatus    string
+	PrivacyStatus      string
 }
 
 const (
-	StatusUpcoming = "upcoming"
-	StatusLive     = "live"
-	StatusNone     = "none"
+	StatusUpcoming  = "upcoming"
+	StatusLive      = "live"
+	StatusCompleted = "completed"
+	StatusPublic    = "public"
 )
