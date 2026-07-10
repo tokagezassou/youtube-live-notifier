@@ -74,7 +74,7 @@ func (c *Client) fetchBroadcasts(broadcastStatus string) ([]model.LiveInfo, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("OAuth 認証に失敗しました（トークンの再取得が必要な可能性があります）: %s", resp.Status)
+		return nil, &AuthError{Status: resp.Status}
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -120,4 +120,12 @@ func mapLifeCycleToStatus(lifeCycle string) string {
 	default:
 		return model.StatusUpcoming
 	}
+}
+
+type AuthError struct {
+	Status string
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("OAuth 認証に失敗しました（トークンの再取得が必要な可能性があります）: %s", e.Status)
 }

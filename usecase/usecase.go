@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -15,9 +16,10 @@ import (
 type NotifierUsecase struct {
 	youtubeClient *youtube.Client
 	// db            *repository.MemoryDB
-	db            *repository.FirestoreDB
-	discordClient *discord.WebhookClient
-	roleID        string
+	db                 *repository.FirestoreDB
+	discordClient      *discord.WebhookClient
+	discordAdminClient *discord.WebhookClient
+	roleID             string
 }
 
 func NewNotifierUsecase(
@@ -25,13 +27,15 @@ func NewNotifierUsecase(
 	// db *repository.MemoryDB,
 	db *repository.FirestoreDB,
 	dc *discord.WebhookClient,
+	dac *discord.WebhookClient,
 	roleID string,
 ) *NotifierUsecase {
 	return &NotifierUsecase{
-		youtubeClient: yt,
-		db:            db,
-		discordClient: dc,
-		roleID:        roleID,
+		youtubeClient:      yt,
+		db:                 db,
+		discordClient:      dc,
+		discordAdminClient: dac,
+		roleID:             roleID,
 	}
 }
 
@@ -40,17 +44,29 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 
 	newMsg, err := u.checkNewStreams()
 	if err != nil {
+		u.notifyIfAuthError(err)
 		return "", fmt.Errorf("新着チェックエラー: %w", err)
 	}
 	resultMessages = append(resultMessages, "【新着チェック】 "+newMsg)
 
 	startMsg, err := u.checkStreamStarted()
 	if err != nil {
+		u.notifyIfAuthError(err)
 		return "", fmt.Errorf("開始チェックエラー: %w", err)
 	}
 	resultMessages = append(resultMessages, "【開始チェック】 "+startMsg)
 
 	return strings.Join(resultMessages, "\n"), nil
+}
+
+func (u *NotifierUsecase) notifyIfAuthError(err error) {
+	var authErr *youtube.AuthError
+	if errors.As(err, &authErr) {
+		msg := "⚠️ YouTube認証が切れました。リフレッシュトークンの再取得が必要です。"
+		if sendErr := u.discordAdminClient.SendMessage(msg, ""); sendErr != nil {
+			log.Printf("認証エラー通知の送信に失敗: %v", sendErr)
+		}
+	}
 }
 
 func (u *NotifierUsecase) checkNewStreams() (string, error) {

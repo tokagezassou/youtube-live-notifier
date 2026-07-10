@@ -33,6 +33,7 @@ func main() {
 		cfg.OAuthRefreshToken,
 	)
 	discordClient := discord.NewWebhookClient(cfg.DiscordWebhookURL)
+	discordAdminClient := discord.NewWebhookClient(cfg.DiscordAdminWebhookURL)
 	// memoryDB := repository.NewMemoryDB()
 	credPath := os.Getenv("FIRESTORE_CREDENTIALS_PATH")
 	projectID := os.Getenv("GCP_PROJECT_ID")
@@ -47,6 +48,7 @@ func main() {
 		youtubeClient,
 		firestoreDB,
 		discordClient,
+		discordAdminClient,
 		cfg.DiscordRoleID,
 	)
 
