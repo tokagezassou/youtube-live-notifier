@@ -20,6 +20,7 @@ type NotifierUsecase struct {
 	discordClient      *discord.WebhookClient
 	discordAdminClient *discord.WebhookClient
 	roleID             string
+	adminUserID        string
 }
 
 func NewNotifierUsecase(
@@ -29,6 +30,7 @@ func NewNotifierUsecase(
 	dc *discord.WebhookClient,
 	dac *discord.WebhookClient,
 	roleID string,
+	adminUserID string,
 ) *NotifierUsecase {
 	return &NotifierUsecase{
 		youtubeClient:      yt,
@@ -36,6 +38,7 @@ func NewNotifierUsecase(
 		discordClient:      dc,
 		discordAdminClient: dac,
 		roleID:             roleID,
+		adminUserID:        adminUserID,
 	}
 }
 
@@ -62,7 +65,10 @@ func (u *NotifierUsecase) CheckAndNotify() (string, error) {
 func (u *NotifierUsecase) notifyIfAuthError(err error) {
 	var authErr *youtube.AuthError
 	if errors.As(err, &authErr) {
-		msg := "⚠️ YouTube認証が切れました。リフレッシュトークンの再取得が必要です。"
+		msg := fmt.Sprintf(
+			"<@%s>\n⚠️ YouTube認証が切れました。リフレッシュトークンの再取得が必要です。",
+			u.adminUserID,
+		)
 		if sendErr := u.discordAdminClient.SendMessage(msg, ""); sendErr != nil {
 			log.Printf("認証エラー通知の送信に失敗: %v", sendErr)
 		}

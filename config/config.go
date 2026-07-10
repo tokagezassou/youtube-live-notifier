@@ -9,6 +9,7 @@ type Config struct {
 	DiscordWebhookURL      string
 	DiscordAdminWebhookURL string
 	DiscordRoleID          string
+	DiscordAdminUserID     string
 	OAuthClientID          string
 	OAuthClientSecret      string
 	OAuthRefreshToken      string
@@ -30,6 +31,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DISCORD_ROLE_ID が設定されていません")
 	}
 
+	adminUserID := os.Getenv("DISCORD_ADMIN_USER_ID")
+	if adminUserID == "" {
+		return nil, fmt.Errorf("DISCORD_ADMIN_USER_ID が設定されていません")
+	}
+
 	clientID := os.Getenv("OAUTH_CLIENT_ID")
 	if clientID == "" {
 		return nil, fmt.Errorf("OAUTH_CLIENT_ID が設定されていません")
@@ -49,6 +55,7 @@ func Load() (*Config, error) {
 		DiscordWebhookURL:      webhookURL,
 		DiscordAdminWebhookURL: adminWebhookURL,
 		DiscordRoleID:          roleID,
+		DiscordAdminUserID:     adminUserID,
 		OAuthClientID:          clientID,
 		OAuthClientSecret:      clientSecret,
 		OAuthRefreshToken:      oAuthRefreshToken,

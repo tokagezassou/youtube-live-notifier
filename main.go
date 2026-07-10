@@ -50,6 +50,7 @@ func main() {
 		discordClient,
 		discordAdminClient,
 		cfg.DiscordRoleID,
+		cfg.DiscordAdminUserID,
 	)
 
 	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
