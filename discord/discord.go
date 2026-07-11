@@ -30,11 +30,16 @@ type payload struct {
 }
 
 func (c *WebhookClient) SendMessage(message string, roleID string) error {
+	roles := []string{}
+	if roleID != "" {
+		roles = []string{roleID}
+	}
+
 	p := payload{
 		Content: message,
 		AllowedMentions: allowedMentions{
 			Parse: []string{"everyone", "users"},
-			Roles: []string{roleID},
+			Roles: roles,
 		},
 		Username:  "もあぼっとちゃん",
 		AvatarURL: "https://raw.githubusercontent.com/tokagezassou/youtube-live-notifier/main/assets/bot_icon.jpg",

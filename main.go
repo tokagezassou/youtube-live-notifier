@@ -25,10 +25,16 @@ func main() {
 		log.Fatalf("設定の読み込みに失敗しました: %v", err)
 	}
 
-	youtubeClient := youtube.NewClient(cfg.YouTubeChannelID, cfg.YouTubeAPIKey)
-	discordClient := discord.NewWebhookClient(cfg.DiscordWebhookURL)
-	// memoryDB := repository.NewMemoryDB()
 	ctx := context.Background()
+	youtubeClient := youtube.NewClient(
+		ctx,
+		cfg.OAuthClientID,
+		cfg.OAuthClientSecret,
+		cfg.OAuthRefreshToken,
+	)
+	discordClient := discord.NewWebhookClient(cfg.DiscordWebhookURL)
+	discordAdminClient := discord.NewWebhookClient(cfg.DiscordAdminWebhookURL)
+	// memoryDB := repository.NewMemoryDB()
 	credPath := os.Getenv("FIRESTORE_CREDENTIALS_PATH")
 	projectID := os.Getenv("GCP_PROJECT_ID")
 
@@ -42,7 +48,9 @@ func main() {
 		youtubeClient,
 		firestoreDB,
 		discordClient,
+		discordAdminClient,
 		cfg.DiscordRoleID,
+		cfg.DiscordAdminUserID,
 	)
 
 	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
