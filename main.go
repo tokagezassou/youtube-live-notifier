@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tokagezassou/youtube-live-notifier/config"
 	"github.com/tokagezassou/youtube-live-notifier/discord"
+	"github.com/tokagezassou/youtube-live-notifier/handler"
 	"github.com/tokagezassou/youtube-live-notifier/repository"
 	"github.com/tokagezassou/youtube-live-notifier/usecase"
 	"github.com/tokagezassou/youtube-live-notifier/youtube"
@@ -45,19 +45,10 @@ func main() {
 		cfg.DiscordRoleID,
 	)
 
-	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("定期チェックのリクエストを受信しました")
+	h := handler.NewYouTubeHandler(notifierUsecase)
 
-		msg, err := notifierUsecase.CheckAndNotify()
-		if err != nil {
-			log.Printf("処理エラー: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("処理完了: %s", msg)
-		fmt.Fprintf(w, "Success: %s", msg)
-	})
+	http.HandleFunc("/check", h.Check)
+	http.HandleFunc("/check_by_search", h.CheckBySearch)
 
 	port := os.Getenv("PORT")
 	if port == "" {

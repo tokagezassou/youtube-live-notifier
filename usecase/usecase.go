@@ -58,7 +58,10 @@ func (u *NotifierUsecase) checkNewStreams() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return u.processNewStreams(lives)
+}
 
+func (u *NotifierUsecase) processNewStreams(lives []model.LiveInfo) (string, error) {
 	ids := make([]string, 0, len(lives))
 	for _, l := range lives {
 		ids = append(ids, l.ID)
@@ -253,4 +256,18 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 	}
 
 	return fmt.Sprintf("%d件の開始状況をチェックしました（通知: %d件）", len(checkIDs), notifiedCount), nil
+}
+
+func (u *NotifierUsecase) SearchAndNotify() (string, error) {
+	lives, err := u.youtubeClient.SearchUpcomingLives()
+	if err != nil {
+		return "", fmt.Errorf("search.list エラー: %w", err)
+	}
+
+	msg, err := u.processNewStreams(lives)
+	if err != nil {
+		return "", fmt.Errorf("search経由の新着チェックエラー: %w", err)
+	}
+
+	return "【search経由】 " + msg, nil
 }

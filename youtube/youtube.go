@@ -130,3 +130,60 @@ func (c *Client) FetchStreamDetails(videoIDs []string) (map[string]model.LiveInf
 
 	return result, nil
 }
+
+type searchAPIResponse struct {
+	Items []struct {
+		ID struct {
+			VideoID string `json:"videoId"`
+		} `json:"id"`
+		Snippet struct {
+			Title string `json:"title"`
+		} `json:"snippet"`
+	} `json:"items"`
+}
+
+func (c *Client) SearchUpcomingLives() ([]model.LiveInfo, error) {
+	q := url.Values{}
+	q.Set("part", "snippet")
+	q.Set("channelId", c.channelID)
+	q.Set("eventType", "upcoming")
+	q.Set("type", "video")
+	q.Set("maxResults", "10")
+	q.Set("key", c.apiKey)
+
+	apiURL := "https://www.googleapis.com/youtube/v3/search?" + q.Encode()
+
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("YouTube Search APIの送信に失敗しました: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("YouTube Search APIエラー: %s (%s)", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp searchAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("JSONの解析に失敗しました: %w", err)
+	}
+
+	lives := make([]model.LiveInfo, 0, len(apiResp.Items))
+	for _, item := range apiResp.Items {
+		if item.ID.VideoID == "" {
+			continue
+		}
+		lives = append(lives, model.LiveInfo{
+			ID:    item.ID.VideoID,
+			Title: item.Snippet.Title,
+			URL:   "https://www.youtube.com/watch?v=" + item.ID.VideoID,
+		})
+	}
+	return lives, nil
+}
