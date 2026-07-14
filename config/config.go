@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -12,25 +14,44 @@ type Config struct {
 	DiscordRoleID     string
 }
 
+func getEnv(key string) (string, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return "", fmt.Errorf("%s が設定されていません", key)
+	}
+	return v, nil
+}
+
 func Load() (*Config, error) {
-	channelID := os.Getenv("YOUTUBE_CHANNEL_ID")
-	if channelID == "" {
-		return nil, fmt.Errorf("YOUTUBE_CHANNEL_ID が設定されていません")
+	channelID, err := getEnv("YOUTUBE_CHANNEL_ID")
+	if err != nil {
+		return nil, err
 	}
 
-	apiKey := os.Getenv("YOUTUBE_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("YOUTUBE_API_KEY が設定されていません")
+	apiKey, err := getEnv("YOUTUBE_API_KEY")
+	if err != nil {
+		return nil, err
 	}
 
-	webhookURL := os.Getenv("DISCORD_WEBHOOK_URL")
-	if webhookURL == "" {
-		return nil, fmt.Errorf("DISCORD_WEBHOOK_URL が設定されていません")
+	webhookURL, err := getEnv("DISCORD_WEBHOOK_URL")
+	if err != nil {
+		return nil, err
 	}
 
-	roleID := os.Getenv("DISCORD_ROLE_ID")
-	if roleID == "" {
-		return nil, fmt.Errorf("DISCORD_ROLE_ID が設定されていません")
+	roleID, err := getEnv("DISCORD_ROLE_ID")
+	if err != nil {
+		return nil, err
+	}
+
+	u, err := url.Parse(webhookURL)
+	if err != nil {
+		return nil, fmt.Errorf("DISCORD_WEBHOOK_URL が不正です: %w", err)
+	}
+	if u.Scheme != "https" || u.Host != "discord.com" {
+		return nil, fmt.Errorf(
+			"DISCORD_WEBHOOK_URL は https://discord.com/... の形式である必要があります (scheme=%q host=%q)",
+			u.Scheme, u.Host,
+		)
 	}
 
 	return &Config{
