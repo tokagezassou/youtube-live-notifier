@@ -121,9 +121,10 @@ func (u *NotifierUsecase) processNewStreams(lives []model.LiveInfo) (string, err
 
 		if info.Status == model.StatusUpcoming {
 			message := u.newStreamMessage(info)
-			err = u.discordClient.SendMessage(message, u.roleID)
-			if err != nil {
-				fmt.Printf("Discord通知エラー (ID: %s): %v\n", info.ID, err)
+			if err := u.discordClient.SendMessage(message, u.roleID); err != nil {
+				log.Printf("枠立て通知エラー (ID: %s): %v", info.ID, err)
+			} else {
+				log.Printf("枠立て通知を送信 (ID: %s, 予定: %s)", info.ID, info.ScheduledStartTime)
 			}
 		}
 	}
