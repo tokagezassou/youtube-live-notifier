@@ -3,6 +3,7 @@ package youtube
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,12 +17,14 @@ import (
 type Client struct {
 	channelID string
 	apiKey    string
+	http      *http.Client
 }
 
 func NewClient(channelID, apiKey string) *Client {
 	return &Client{
-		channelID: channelID,
-		apiKey:    apiKey,
+		channelID: strings.TrimSpace(channelID),
+		apiKey:    strings.TrimSpace(apiKey),
+		http:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -36,9 +39,10 @@ type entry struct {
 
 func (c *Client) FetchLatestLives() ([]model.LiveInfo, error) {
 	rssURL := fmt.Sprintf("https://www.youtube.com/feeds/videos.xml?channel_id=%s", c.channelID)
-	resp, err := http.Get(rssURL)
+
+	resp, err := c.http.Get(rssURL)
 	if err != nil {
-		return nil, err
+		return nil, wrapHTTPErr("YouTube RSSの取得に失敗しました", err)
 	}
 	defer resp.Body.Close()
 
@@ -50,12 +54,13 @@ func (c *Client) FetchLatestLives() ([]model.LiveInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("RSSの読み込みに失敗しました: %w", err)
 	}
+
 	var f feed
 	if err := xml.Unmarshal(body, &f); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("RSSの解析に失敗しました: %w", err)
 	}
 
-	var lives []model.LiveInfo
+	lives := make([]model.LiveInfo, 0, len(f.Entries))
 	for _, e := range f.Entries {
 		lives = append(lives, model.LiveInfo{
 			ID:    e.VideoID,
@@ -83,22 +88,22 @@ func (c *Client) FetchStreamDetails(videoIDs []string) (map[string]model.LiveInf
 		return map[string]model.LiveInfo{}, nil
 	}
 
-	idsParam := strings.Join(videoIDs, ",")
+	q := url.Values{}
+	q.Set("part", "snippet,liveStreamingDetails")
+	q.Set("id", strings.Join(videoIDs, ","))
+	q.Set("key", c.apiKey)
 
-	apiURL := fmt.Sprintf(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=%s&key=%s",
-		url.QueryEscape(idsParam),
-		c.apiKey,
-	)
+	apiURL := "https://www.googleapis.com/youtube/v3/videos?" + q.Encode()
 
-	resp, err := http.Get(apiURL)
+	resp, err := c.http.Get(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("YouTube APIの送信に失敗しました: %w", err)
+		return nil, wrapHTTPErr("YouTube APIの送信に失敗しました", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("YouTube APIエラー: %s", resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("YouTube APIエラー: %s (%s)", resp.Status, string(body))
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -153,14 +158,14 @@ func (c *Client) SearchUpcomingLives() ([]model.LiveInfo, error) {
 
 	apiURL := "https://www.googleapis.com/youtube/v3/search?" + q.Encode()
 
-	resp, err := http.Get(apiURL)
+	resp, err := c.http.Get(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("YouTube Search APIの送信に失敗しました: %w", err)
+		return nil, wrapHTTPErr("YouTube Search APIの送信に失敗しました", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("YouTube Search APIエラー: %s (%s)", resp.Status, string(body))
 	}
 
@@ -186,4 +191,12 @@ func (c *Client) SearchUpcomingLives() ([]model.LiveInfo, error) {
 		})
 	}
 	return lives, nil
+}
+
+func wrapHTTPErr(msg string, err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s: %v", msg, urlErr.Err)
+	}
+	return fmt.Errorf("%s: %w", msg, err)
 }

@@ -3,10 +3,13 @@ package discord
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -15,9 +18,9 @@ type WebhookClient struct {
 	http       *http.Client
 }
 
-func NewWebhookClient(url string) *WebhookClient {
+func NewWebhookClient(rawURL string) *WebhookClient {
 	return &WebhookClient{
-		webhookURL: url,
+		webhookURL: strings.TrimSpace(rawURL),
 		http:       &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -57,6 +60,11 @@ func (c *WebhookClient) SendMessage(message string, roleID string) error {
 
 	resp, err := c.http.Post(c.webhookURL+"?wait=true", "application/json", bytes.NewBuffer(body))
 	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return fmt.Errorf("Webhookの送信に失敗しました (url=%s): %v",
+				maskWebhookURL(c.webhookURL), urlErr.Err)
+		}
 		return fmt.Errorf("Webhookの送信に失敗しました: %w", err)
 	}
 	defer resp.Body.Close()
@@ -75,4 +83,12 @@ func (c *WebhookClient) SendMessage(message string, roleID string) error {
 
 	log.Printf("[Discord] 送信成功 message_id=%s channel_id=%s", msg.ID, msg.ChannelID)
 	return nil
+}
+
+func maskWebhookURL(raw string) string {
+	i := strings.LastIndex(raw, "/")
+	if i < 0 {
+		return "(invalid)"
+	}
+	return raw[:i+1] + "***"
 }
