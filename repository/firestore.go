@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -51,10 +52,10 @@ func (db *FirestoreDB) Save(doc StreamDocument) error {
 	return err
 }
 
-func (db *FirestoreDB) GetExistingIDs(ids []string) map[string]bool {
+func (db *FirestoreDB) GetExistingIDs(ids []string) (map[string]bool, error) {
 	result := make(map[string]bool)
 	if len(ids) == 0 {
-		return result
+		return result, nil
 	}
 	ctx := context.Background()
 
@@ -65,24 +66,24 @@ func (db *FirestoreDB) GetExistingIDs(ids []string) map[string]bool {
 
 	docs, err := db.client.GetAll(ctx, refs)
 	if err != nil {
-		log.Printf("Firestore GetAllエラー: %v\n", err)
-		return result
+		return nil, fmt.Errorf("Firestore GetAll: %w", err)
 	}
 	for _, d := range docs {
 		if d.Exists() {
 			result[d.Ref.ID] = true
 		}
 	}
-	return result
+	return result, nil
 }
 
-func (db *FirestoreDB) GetShouldNotifyStreams() []StreamDocument {
+func (db *FirestoreDB) GetShouldNotifyStreams() ([]StreamDocument, error) {
 	ctx := context.Background()
 	var targets []StreamDocument
 
 	iter := db.client.Collection("streams").
 		Where("ShouldNotify", "==", true).
 		Documents(ctx)
+	defer iter.Stop()
 
 	for {
 		doc, err := iter.Next()
@@ -90,16 +91,16 @@ func (db *FirestoreDB) GetShouldNotifyStreams() []StreamDocument {
 			break
 		}
 		if err != nil {
-			log.Printf("Firestore通知対象取得エラー: %v\n", err)
-			return targets
+			return nil, fmt.Errorf("Firestore通知対象取得: %w", err)
 		}
 
 		var s StreamDocument
-		if err := doc.DataTo(&s); err == nil {
-			targets = append(targets, s)
-		} else {
-			log.Printf("データ変換エラー (ID: %s): %v\n", doc.Ref.ID, err)
+		err = doc.DataTo(&s)
+		if err != nil {
+			log.Printf("データ変換エラー (ID: %s): %v", doc.Ref.ID, err)
+			continue
 		}
+		targets = append(targets, s)
 	}
-	return targets
+	return targets, nil
 }

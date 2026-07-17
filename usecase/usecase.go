@@ -66,7 +66,11 @@ func (u *NotifierUsecase) processNewStreams(lives []model.LiveInfo) (string, err
 	for _, l := range lives {
 		ids = append(ids, l.ID)
 	}
-	existing := u.db.GetExistingIDs(ids)
+
+	existing, err := u.db.GetExistingIDs(ids)
+	if err != nil {
+		return "", fmt.Errorf("既存ID取得エラー: %w", err)
+	}
 
 	var newCandidateIDs []string
 	candidateMap := make(map[string]model.LiveInfo)
@@ -90,7 +94,12 @@ func (u *NotifierUsecase) processNewStreams(lives []model.LiveInfo) (string, err
 
 	for _, id := range newCandidateIDs {
 		info := candidateMap[id]
-		apiInfo := apiDetails[id]
+
+		apiInfo, ok := apiDetails[id]
+		if !ok {
+			log.Printf("詳細が取得できなかったため新着処理をスキップ (ID: %s)", id)
+			continue
+		}
 
 		info.Status = apiInfo.Status
 		info.ScheduledStartTime = apiInfo.ScheduledStartTime
@@ -113,8 +122,7 @@ func (u *NotifierUsecase) processNewStreams(lives []model.LiveInfo) (string, err
 			CreatedAt:          time.Now(),
 		}
 
-		err := u.db.Save(doc)
-		if err != nil {
+		if err := u.db.Save(doc); err != nil {
 			log.Printf("保存失敗のため通知スキップ (ID: %s): %v", info.ID, err)
 			continue
 		}
@@ -165,7 +173,10 @@ func (u *NotifierUsecase) newStreamMessage(l model.LiveInfo) string {
 }
 
 func (u *NotifierUsecase) checkStreamStarted() (string, error) {
-	targets := u.db.GetShouldNotifyStreams()
+	targets, err := u.db.GetShouldNotifyStreams()
+	if err != nil {
+		return "", fmt.Errorf("通知対象取得エラー: %w", err)
+	}
 	if len(targets) == 0 {
 		return "監視対象なし", nil
 	}
@@ -225,11 +236,11 @@ func (u *NotifierUsecase) checkStreamStarted() (string, error) {
 
 		apiInfo, exists := apiDetails[id]
 		if !exists {
-			log.Printf("警告: APIから動画データが返されませんでした (ID: %s)。次回の周期で再試行します。\n", id)
+			log.Printf("警告: APIから動画データが返されませんでした (ID: %s)。次回の周期で再試行します。", id)
 			continue
 		}
 
-		if !exists || apiInfo.Status == model.StatusNone {
+		if apiInfo.Status == model.StatusNone {
 			doc.ShouldNotify = false
 			err := u.db.Save(doc)
 			if err != nil {
