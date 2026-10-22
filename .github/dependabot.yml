@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Dockerfile のベースイメージ（golang, alpine）
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Asia/Tokyo"
+
+  # Go の依存ライブラリ（PR が大量に来ないよう1つにまとめる）
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Asia/Tokyo"
+    groups:
+      go-deps:
+        patterns:
+          - "*"
+
+  # workflow で使っている Action（checkout, setup-go）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Asia/Tokyo"
