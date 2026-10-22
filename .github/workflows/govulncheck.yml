@@ -1,0 +1,32 @@
+name: govulncheck
+
+on:
+  schedule:
+    - cron: "0 10 * * 5"
+  # main に push したときにも実行
+  push:
+    branches: [main]
+  # Actions タブから手動でも実行できるようにする
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod に書かれたバージョンの Go を使う（本番と同じ標準ライブラリを検査するため）
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # 脆弱性が見つかると失敗扱いになり、通知が届く
+      - name: Run govulncheck
+        run: govulncheck ./...
