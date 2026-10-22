@@ -6,6 +6,8 @@ on:
   # main に push したときにも実行
   push:
     branches: [main]
+  # PR（Dependabot の PR を含む）でマージ前に検査
+  pull_request:
   # Actions タブから手動でも実行できるようにする
   workflow_dispatch:
 
@@ -13,20 +15,45 @@ permissions:
   contents: read
 
 jobs:
-  govulncheck:
+  # ソースコード検査：依存ライブラリの脆弱性を、実際に呼んでいる関数単位で調べる
+  source:
+    name: govulncheck (source)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      # go.mod に書かれたバージョンの Go を使う（本番と同じ標準ライブラリを検査するため）
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
       # 脆弱性が見つかると失敗扱いになり、通知が届く
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: go tool govulncheck ./...
+
+  # バイナリ検査：Dockerfile でビルドした本番と同じバイナリを調べる
+  # （本番イメージの Go バージョン＝標準ライブラリを正確に検査できる）
+  binary:
+    name: govulncheck (binary)
+    runs-on: ubuntu-latest
+    env:
+      # ↓ イメージ内のバイナリのパスに書き換える（Dockerfile の COPY 先など）
+      BINARY_PATH: /app/server
+    steps:
+      - uses: actions/checkout@v5
+
+      # govulncheck を動かすためだけに使う（検査対象の Go バージョンには影響しない）
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build image with Dockerfile
+        run: docker build -t app:scan .
+
+      - name: Extract binary from image
+        run: |
+          docker create --name scan app:scan
+          docker cp "scan:${BINARY_PATH}" ./app-binary
+
+      - name: Run govulncheck on binary
+        run: go tool govulncheck -mode=binary ./app-binary
