@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	_ "golang.org/x/crypto/x509roots/fallback"
+
 	"github.com/joho/godotenv"
 	"github.com/tokagezassou/youtube-live-notifier/config"
 	"github.com/tokagezassou/youtube-live-notifier/discord"

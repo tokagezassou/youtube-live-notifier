@@ -5,20 +5,20 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o server main.go
+# CGO_ENABLED=0: OS のライブラリに依存しない静的バイナリにする
+# -tags timetzdata: タイムゾーン情報をバイナリに埋め込む
+RUN CGO_ENABLED=0 go build -tags timetzdata -trimpath -o server main.go
 
-FROM alpine:3.24
+# 実行イメージ：何も入っていない scratch にバイナリだけを置く
+FROM scratch
 WORKDIR /app
-
-RUN apk --no-cache add tzdata ca-certificates && \
-    cp /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && \
-    echo "Asia/Tokyo" > /etc/timezone && \
-    adduser -D -H -u 10001 appuser
 
 COPY --from=builder /app/server .
 
+ENV TZ=Asia/Tokyo
 ENV PORT=8080
 
-USER appuser
+# scratch にはユーザー情報がないため、数値の UID/GID で一般ユーザーとして実行する
+USER 10001:10001
 
 CMD ["./server"]
