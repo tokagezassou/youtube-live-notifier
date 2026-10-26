@@ -3,10 +3,10 @@ module github.com/tokagezassou/youtube-live-notifier
 go 1.27.3
 
 require (
-	cloud.google.com/go/firestore v1.28.0
+	cloud.google.com/go/firestore v1.29.0
 	github.com/joho/godotenv v1.5.1
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a
-	google.golang.org/api v0.307.0
+	google.golang.org/api v0.308.0
 )
 
 require (
